@@ -2,20 +2,27 @@ package cucumber.steps;
 
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import cucumber.metodo.CondicaoMotorista.CondicaoMotorista;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.databind.module.SimpleModule;
+import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import cucumber.metodo.OrigemConsulta.*;
+import cucumber.metodo.response.ResponseDTO;
+import io.cucumber.java.Before;
 import io.cucumber.java.en.And;
 import io.cucumber.java.en.Given;
 import io.cucumber.java.en.Then;
-import io.restassured.RestAssured;
-import org.junit.Before;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.jackson.JsonComponentModule;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -23,14 +30,13 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.junit.Assert.assertThat;
 import static org.springframework.http.HttpMethod.POST;
 
-
+@Slf4j
 public class ConsultaStep {
 
     private ResponseEntity<String> response;
     private TestRestTemplate template;
     private String url;
     private String endpoint;
-    private CondicaoMotorista condicaoMotorista;
     private OrigemConsulta origemConsulta;
     private MotoristaReqDTO motoristaReqDTO;
     private ProprietarioReqDTO proprietarioReqDTO;
@@ -38,17 +44,20 @@ public class ConsultaStep {
     private DadosViagemReqDTO dadosViagemReqDTO;
     private CidadeOrigem cidadeOrigem;
     private CidadeDestino cidadeDestino;
+    private ObjectMapper objectMapper;
+
+    private ResponseDTO responseDTO;
 
     @Before
-    public void setUp() throws Exception {
-        try {
-            //RestAssured.port = port;
-            RestAssured.useRelaxedHTTPSValidation();
-            RestAssured.config().getSSLConfig().with().keyStore("classpath:src/test/cucumber/cucumber/steps/dogtag_HomologAWS_00634453000170 (4).p12", "sWa010l06");
-        } catch (Exception ex) {
-            System.out.println("Error while loading keystore >>>>>>>>>");
-            ex.printStackTrace();
-        }
+    public void before() {
+        objectMapper = new ObjectMapper();
+        objectMapper.registerModule(new SimpleModule());
+        objectMapper.registerModule(new JavaTimeModule());
+        objectMapper.registerModule(new Jdk8Module());
+        objectMapper.registerModule(new JsonComponentModule());
+        objectMapper.configure(SerializationFeature.FAIL_ON_EMPTY_BEANS, false);
+        objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        template = new TestRestTemplate();
     }
 
     @Given("que realizo uma requisicao POST no Telerisco (.*)")
@@ -148,7 +157,7 @@ public class ConsultaStep {
     public void envioARequisição() throws JsonProcessingException {
 
         origemConsulta.setMotoristaReqDTO(motoristaReqDTO);
-        veiculoReqDTOS.forEach(i ->i.setProprietarioReqDTO(proprietarioReqDTO));
+        veiculoReqDTOS.forEach(i -> i.setProprietarioReqDTO(proprietarioReqDTO));
         origemConsulta.setVeiculoReqDTOS(veiculoReqDTOS);
         dadosViagemReqDTO.setCidadeOrigem(cidadeOrigem);
         dadosViagemReqDTO.setCidadeDestino(cidadeDestino);
@@ -156,7 +165,7 @@ public class ConsultaStep {
 
 
         final var httpHeaders = new HttpHeaders();
-        httpHeaders.setBasicAuth("telerisco-sistema","a4d9bd9b-ea5c-47fa-8f68-dca0563a83be");
+        httpHeaders.setBasicAuth("telerisco-sistema", "a4d9bd9b-ea5c-47fa-8f68-dca0563a83be");
         httpHeaders.setContentType(MediaType.APPLICATION_JSON);
 
         String writeValueAsString = new ObjectMapper().writeValueAsString(origemConsulta);
@@ -167,13 +176,26 @@ public class ConsultaStep {
         response = template.exchange(endpoint, POST, httpEntity, String.class);
 
         System.out.println("--------------------");
-        System.out.println(response);
     }
 
+    @Then("mapeio a validação")
+    public void mapeioAValidação() throws IOException {
 
+        final var bodyJava = response.getBody();
+        this.responseDTO = objectMapper.readValue(bodyJava, ResponseDTO.class);
+
+    }
 
     @Then("valido o (.*) apresentado")
     public void validoOStatusApresentado(final int Status) {
         assertThat("Status code expected is " + Status, Status, equalTo(response.getStatusCodeValue()));
+    }
+
+    @And("valido retornoWs (.*)")
+    public void validoRetornoWsRetornoWs(final Integer retornoWs) {
+
+        final var bodyJava = responseDTO.getRetornoWs();
+        assertThat("retornoWs expected is " + retornoWs, retornoWs, equalTo(bodyJava));
+        System.out.println(bodyJava);
     }
 }
